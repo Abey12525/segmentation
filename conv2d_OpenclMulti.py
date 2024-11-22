@@ -38,11 +38,11 @@ class Conv2DOpenCL:
 
     def execute(self, input_array, filters, in_channels, out_channels, kernel_size, stride=1, padding=0):
         """
-        Perform 2D convolution using the FPGA-accelerated OpenCL kernel.
+        Perform 2D convolution using the FPGA-accelerated OpenCL kernel for batch input.
 
         Args:
             kernel_size (int or tuple): Size of the convolutional kernel.
-            input_array (np.ndarray): Input array of shape (in_channels, height, width).
+            input_array (np.ndarray): Input array of shape (batch_size, in_channels, height, width).
             filters (np.ndarray): Filter array of shape (out_channels, in_channels, kernel_h, kernel_w).
             in_channels (int): Number of input channels.
             out_channels (int): Number of output channels.
@@ -50,36 +50,37 @@ class Conv2DOpenCL:
             padding (int): Padding added to the input. Default: 0.
 
         Returns:
-            np.ndarray: Output array of shape (out_channels, output_h, output_w).
+            np.ndarray: Output array of shape (batch_size, out_channels, output_h, output_w).
         """
         self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size, kernel_size)
 
-        _, in_channels, input_h, input_w = input_array.shape
+        batch_size, _, input_h, input_w = input_array.shape
         out_channels, _, filter_h, filter_w = filters.shape
 
         # Apply padding
         padded_h = input_h + 2 * padding
         padded_w = input_w + 2 * padding
-        padded_input = np.zeros((in_channels, padded_h, padded_w), dtype=np.float32)
-        padded_input[:, padding:padding + input_h, padding:padding + input_w] = input_array
+        padded_input = np.zeros((batch_size, in_channels, padded_h, padded_w), dtype=np.float32)
+        padded_input[:, :, padding:padding + input_h, padding:padding + input_w] = input_array
 
         # Calculate output dimensions
         output_h = (padded_h - filter_h) // stride + 1
         output_w = (padded_w - filter_w) // stride + 1
 
-        # Initialize output array
-        output_array = np.zeros((out_channels, output_h, output_w), dtype=np.float32)
+        # Initialize output array for batch
+        output_array = np.zeros((batch_size, out_channels, output_h, output_w), dtype=np.float32)
 
-        # Perform convolution for each output channel
-        for out_c in range(out_channels):
-            result = np.zeros((output_h, output_w), dtype=np.float32)
-            for in_c in range(in_channels):
-                result += self._conv2d_single_channel(
-                    padded_input[in_c],  # Single channel input
-                    filters[out_c, in_c],  # Single channel filter
-                    stride
-                )
-            output_array[out_c] = result
+        # Perform convolution for each image in the batch
+        for batch_idx in range(batch_size):
+            for out_c in range(out_channels):
+                result = np.zeros((output_h, output_w), dtype=np.float32)
+                for in_c in range(in_channels):
+                    result += self._conv2d_single_channel(
+                        padded_input[batch_idx, in_c],  # Single channel input
+                        filters[out_c, in_c],  # Single channel filter
+                        stride
+                    )
+                output_array[batch_idx, out_c] = result
 
         return output_array
 
